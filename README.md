@@ -1,0 +1,3 @@
+# Slideo
+
+Slideo API project
