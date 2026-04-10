@@ -84,7 +84,7 @@ app.use("/api", router);
 if (process.env.NODE_ENV === "production") {
   const frontendPath = path.resolve(__dirname, "../../../artifacts/slideo/dist/public");
   app.use(express.static(frontendPath));
-  app.get("*", (_req, res) => {
+  app.get("/{*path}", (_req, res) => {
     res.sendFile(path.join(frontendPath, "index.html"));
   });
 }
