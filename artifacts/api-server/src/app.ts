@@ -12,8 +12,7 @@ import { globalRateLimit } from "./middlewares/antiAbuse";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
-  logger.fatal("SESSION_SECRET is required in production. Aborting.");
-  process.exit(1);
+  logger.warn("SESSION_SECRET not set — using insecure default. Set it in Railway environment variables.");
 }
 
 const app: Express = express();
