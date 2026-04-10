@@ -3,9 +3,13 @@ import cors from "cors";
 import helmet from "helmet";
 import pinoHttp from "pino-http";
 import session from "express-session";
+import path from "path";
+import { fileURLToPath } from "url";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { globalRateLimit } from "./middlewares/antiAbuse";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
   logger.fatal("SESSION_SECRET is required in production. Aborting.");
@@ -76,5 +80,14 @@ app.use(session({
 
 app.use(globalRateLimit);
 app.use("/api", router);
+
+// Serve frontend static files in production
+if (process.env.NODE_ENV === "production") {
+  const frontendPath = path.resolve(__dirname, "../../../artifacts/slideo/dist/public");
+  app.use(express.static(frontendPath));
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(frontendPath, "index.html"));
+  });
+}
 
 export default app;
