@@ -1,61 +1,80 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import pinoHttp from "pino-http";
+import session from "express-session";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { globalRateLimit } from "./middlewares/antiAbuse";
+
+if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
+  logger.fatal("SESSION_SECRET is required in production. Aborting.");
+  process.exit(1);
+}
 
 const app: Express = express();
 
-app.use(
-  pinoHttp({
-    logger,
-    serializers: {
-      req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
-      },
-      res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
-      },
+app.set("trust proxy", 1);
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://accounts.google.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      frameSrc: ["https://accounts.google.com"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
     },
-  }),
-);
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+  },
+  crossOriginEmbedderPolicy: false,
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+}));
 
-app.get("/", (_req, res) => {
-  res.send(`<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Slude</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; background: #0f0f11; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .container { text-align: center; }
-    h1 { font-size: 3rem; font-weight: 700; margin-bottom: 0.5rem; }
-    p { color: #888; font-size: 1.1rem; margin-bottom: 2rem; }
-    a { display: inline-block; padding: 0.75rem 1.5rem; background: #fff; color: #0f0f11; border-radius: 8px; text-decoration: none; font-weight: 600; }
-    a:hover { background: #ddd; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>Slude</h1>
-    <p>API is up and running</p>
-    <a href="/api/healthz">Check API Health</a>
-  </div>
-</body>
-</html>`);
-});
+app.disable("x-powered-by");
 
+app.use(pinoHttp({
+  logger,
+  serializers: {
+    req(req) { return { id: req.id, method: req.method, url: req.url?.split("?")[0] }; },
+    res(res) { return { statusCode: res.statusCode }; },
+  },
+}));
+
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map(o => o.trim())
+  : (process.env.NODE_ENV === "production" ? false : true);
+
+app.use(cors({
+  credentials: true,
+  origin: allowedOrigins,
+}));
+
+app.use(express.json({ limit: "100kb" }));
+app.use(express.urlencoded({ extended: true, limit: "100kb" }));
+
+app.use(session({
+  secret: process.env.SESSION_SECRET || "slideo-dev-secret-change-in-prod",
+  resave: false,
+  saveUninitialized: false,
+  name: "sid",
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+  },
+}));
+
+app.use(globalRateLimit);
 app.use("/api", router);
 
 export default app;
